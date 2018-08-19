@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 - 2017 Anton Tananaev (anton@traccar.org)
+ * Copyright 2013 - 2018 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 package org.traccar.protocol;
 
-import org.jboss.netty.channel.Channel;
+import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
 import org.traccar.DeviceSession;
 import org.traccar.helper.DateBuilder;
@@ -57,6 +57,45 @@ public class Tlt2hProtocolDecoder extends BaseProtocolDecoder {
             .any()
             .compile();
 
+    private void decodeStatus(Position position, String status) {
+        switch (status) {
+            case "AUTOSTART":
+            case "AUTO":
+                position.set(Position.KEY_IGNITION, true);
+                break;
+            case "AUTOSTOP":
+            case "AUTOLOW":
+                position.set(Position.KEY_IGNITION, false);
+                break;
+            case "TOWED":
+                position.set(Position.KEY_ALARM, Position.ALARM_TOW);
+                break;
+            case "SOS":
+                position.set(Position.KEY_ALARM, Position.ALARM_SOS);
+                break;
+            case "DEF":
+                position.set(Position.KEY_ALARM, Position.ALARM_POWER_CUT);
+                break;
+            case "BLP":
+                position.set(Position.KEY_ALARM, Position.ALARM_LOW_BATTERY);
+                break;
+            case "CLP":
+                position.set(Position.KEY_ALARM, Position.ALARM_LOW_POWER);
+                break;
+            case "OS":
+                position.set(Position.KEY_ALARM, Position.ALARM_GEOFENCE_EXIT);
+                break;
+            case "RS":
+                position.set(Position.KEY_ALARM, Position.ALARM_GEOFENCE_ENTER);
+                break;
+            case "OVERSPEED":
+                position.set(Position.KEY_ALARM, Position.ALARM_OVERSPEED);
+                break;
+            default:
+                break;
+        }
+    }
+
     @Override
     protected Object decode(
             Channel channel, SocketAddress remoteAddress, Object msg) throws Exception {
@@ -84,8 +123,7 @@ public class Tlt2hProtocolDecoder extends BaseProtocolDecoder {
             parser = new Parser(PATTERN_POSITION, message);
             if (parser.matches()) {
 
-                Position position = new Position();
-                position.setProtocol(getProtocolName());
+                Position position = new Position(getProtocolName());
                 position.setDeviceId(deviceSession.getDeviceId());
 
                 parser.next(); // base station info
@@ -102,7 +140,7 @@ public class Tlt2hProtocolDecoder extends BaseProtocolDecoder {
                 dateBuilder.setDateReverse(parser.nextInt(0), parser.nextInt(0), parser.nextInt(0));
                 position.setTime(dateBuilder.getDate());
 
-                position.set(Position.KEY_STATUS, status);
+                decodeStatus(position, status);
 
                 positions.add(position);
             }

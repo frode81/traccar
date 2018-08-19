@@ -48,6 +48,7 @@ import org.traccar.model.Driver;
 import org.traccar.model.Event;
 import org.traccar.model.Geofence;
 import org.traccar.model.Group;
+import org.traccar.model.Maintenance;
 import org.traccar.model.ManagedUser;
 import org.traccar.model.Notification;
 import org.traccar.model.Permission;
@@ -189,19 +190,19 @@ public class DataManager {
 
     public static String constructPermissionQuery(String action, Class<?> owner, Class<?> property) {
         switch (action) {
-        case ACTION_SELECT_ALL:
-            return "SELECT " + makeNameId(owner) + ", " + makeNameId(property) + " FROM "
-                    + getPermissionsTableName(owner, property);
-        case ACTION_INSERT:
-            return "INSERT INTO " + getPermissionsTableName(owner, property)
-                    + " (" + makeNameId(owner) + ", " + makeNameId(property) + ") VALUES (:"
-                    + makeNameId(owner) + ", :" + makeNameId(property) + ")";
-        case ACTION_DELETE:
-            return "DELETE FROM " + getPermissionsTableName(owner, property)
-                    + " WHERE " + makeNameId(owner) + " = :" + makeNameId(owner)
-                    + " AND " + makeNameId(property) + " = :" + makeNameId(property);
-        default:
-            throw new IllegalArgumentException("Unknown action");
+            case ACTION_SELECT_ALL:
+                return "SELECT " + makeNameId(owner) + ", " + makeNameId(property) + " FROM "
+                        + getPermissionsTableName(owner, property);
+            case ACTION_INSERT:
+                return "INSERT INTO " + getPermissionsTableName(owner, property)
+                        + " (" + makeNameId(owner) + ", " + makeNameId(property) + ") VALUES (:"
+                        + makeNameId(owner) + ", :" + makeNameId(property) + ")";
+            case ACTION_DELETE:
+                return "DELETE FROM " + getPermissionsTableName(owner, property)
+                        + " WHERE " + makeNameId(owner) + " = :" + makeNameId(owner)
+                        + " AND " + makeNameId(property) + " = :" + makeNameId(property);
+            default:
+                throw new IllegalArgumentException("Unknown action");
         }
     }
 
@@ -242,12 +243,16 @@ public class DataManager {
 
     public String getQuery(String action, Class<?> owner, Class<?> property) {
         String queryName;
-        if (action.equals(ACTION_SELECT_ALL)) {
-            queryName = "database.select" + owner.getSimpleName() + property.getSimpleName() + "s";
-        } else if (action.equals(ACTION_INSERT)) {
-            queryName = "database.link" + owner.getSimpleName() + property.getSimpleName();
-        } else {
-            queryName = "database.unlink" + owner.getSimpleName() + property.getSimpleName();
+        switch (action) {
+            case ACTION_SELECT_ALL:
+                queryName = "database.select" + owner.getSimpleName() + property.getSimpleName() + "s";
+                break;
+            case ACTION_INSERT:
+                queryName = "database.link" + owner.getSimpleName() + property.getSimpleName();
+                break;
+            default:
+                queryName = "database.unlink" + owner.getSimpleName() + property.getSimpleName();
+                break;
         }
         String query = config.getString(queryName);
         if (query == null) {
@@ -268,11 +273,12 @@ public class DataManager {
         if (propertyName.equals("ManagedUser")) {
             propertyName = "User";
         }
-        return Introspector.decapitalize(owner.getSimpleName()) + "_" + Introspector.decapitalize(propertyName);
+        return "tc_" + Introspector.decapitalize(owner.getSimpleName())
+                + "_" + Introspector.decapitalize(propertyName);
     }
 
     private static String getObjectsTableName(Class<?> clazz) {
-        String result = Introspector.decapitalize(clazz.getSimpleName());
+        String result = "tc_" + Introspector.decapitalize(clazz.getSimpleName());
         // Add "s" ending if object name is not plural already
         if (!result.endsWith("s")) {
             result += "s";
@@ -290,7 +296,8 @@ public class DataManager {
                     config.getString("database.url"),
                     config.getString("database.user"),
                     config.getString("database.password"),
-                    null, resourceAccessor);
+                    config.getString("database.driver"),
+                    null, null, null, resourceAccessor);
 
             Liquibase liquibase = new Liquibase(
                     config.getString("database.changelog"), resourceAccessor, database);
@@ -333,13 +340,6 @@ public class DataManager {
                 .setDate("from", from)
                 .setDate("to", to)
                 .executeQuery(Position.class);
-    }
-
-    public void addPosition(Position position) throws SQLException {
-        position.setId(QueryBuilder.create(dataSource, getQuery(ACTION_INSERT, Position.class), true)
-                .setObject(position)
-                .setDate("serverTime", new Date())
-                .executeUpdate());
     }
 
     public void updateLatestPosition(Position position) throws SQLException {
@@ -408,6 +408,8 @@ public class DataManager {
                 return Calendar.class;
             case "command":
                 return Command.class;
+            case "maintenance":
+                return Maintenance.class;
             case "notification":
                 return Notification.class;
             default:

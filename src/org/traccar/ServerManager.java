@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 - 2017 Anton Tananaev (anton@traccar.org)
+ * Copyright 2012 - 2018 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
  */
 package org.traccar;
 
+import org.traccar.helper.Log;
+
 import java.io.File;
+import java.net.BindException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -76,9 +79,13 @@ public class ServerManager {
         return protocolList.get(name);
     }
 
-    public void start() {
+    public void start() throws Exception {
         for (TrackerServer server: serverList) {
-            server.start();
+            try {
+                server.start();
+            } catch (BindException e) {
+                Log.warning("One of the protocols is disabled due to port conflict");
+            }
         }
     }
 
@@ -86,9 +93,6 @@ public class ServerManager {
         for (TrackerServer server: serverList) {
             server.stop();
         }
-
-        // Release resources
-        GlobalChannelFactory.release();
         GlobalTimer.release();
     }
 

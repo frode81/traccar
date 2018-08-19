@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 - 2016 Anton Tananaev (anton@traccar.org)
+ * Copyright 2015 - 2018 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@ import org.traccar.helper.Log;
 import org.traccar.model.Device;
 import org.traccar.model.Position;
 
+import javax.ws.rs.client.Entity;
+import java.util.HashMap;
+import java.util.Map;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -32,9 +35,13 @@ import java.util.TimeZone;
 public class WebDataHandler extends BaseDataHandler {
 
     private final String url;
+    private final boolean json;
+    private static final String KEY_POSITION = "position";
+    private static final String KEY_DEVICE = "device";
 
-    public WebDataHandler(String url) {
+    public WebDataHandler(String url, boolean json) {
         this.url = url;
+        this.json = json;
     }
 
     private static String formatSentence(Position position) {
@@ -73,13 +80,14 @@ public class WebDataHandler extends BaseDataHandler {
         }
     }
 
-    public String formatRequest(Position position) {
+    public String formatRequest(Position position) throws UnsupportedEncodingException, JsonProcessingException {
 
         Device device = Context.getIdentityManager().getById(position.getDeviceId());
 
         String request = url
-                .replace("{name}", device.getName())
+                .replace("{name}", URLEncoder.encode(device.getName(), StandardCharsets.UTF_8.name()))
                 .replace("{uniqueId}", device.getUniqueId())
+                .replace("{status}", device.getStatus())
                 .replace("{deviceId}", String.valueOf(position.getDeviceId()))
                 .replace("{protocol}", String.valueOf(position.getProtocol()))
                 .replace("{deviceTime}", String.valueOf(position.getDeviceTime().getTime()))
@@ -90,25 +98,18 @@ public class WebDataHandler extends BaseDataHandler {
                 .replace("{altitude}", String.valueOf(position.getAltitude()))
                 .replace("{speed}", String.valueOf(position.getSpeed()))
                 .replace("{course}", String.valueOf(position.getCourse()))
+                .replace("{accuracy}", String.valueOf(position.getAccuracy()))
                 .replace("{statusCode}", calculateStatus(position));
 
         if (position.getAddress() != null) {
-            try {
-                request = request.replace(
-                        "{address}", URLEncoder.encode(position.getAddress(), StandardCharsets.UTF_8.name()));
-            } catch (UnsupportedEncodingException error) {
-                Log.warning(error);
-            }
+            request = request.replace(
+                    "{address}", URLEncoder.encode(position.getAddress(), StandardCharsets.UTF_8.name()));
         }
 
         if (request.contains("{attributes}")) {
-            try {
-                String attributes = Context.getObjectMapper().writeValueAsString(position.getAttributes());
-                request = request.replace(
-                        "{attributes}", URLEncoder.encode(attributes, StandardCharsets.UTF_8.name()));
-            } catch (UnsupportedEncodingException | JsonProcessingException error) {
-                Log.warning(error);
-            }
+            String attributes = Context.getObjectMapper().writeValueAsString(position.getAttributes());
+            request = request.replace(
+                    "{attributes}", URLEncoder.encode(attributes, StandardCharsets.UTF_8.name()));
         }
 
         if (request.contains("{gprmc}")) {
@@ -120,10 +121,30 @@ public class WebDataHandler extends BaseDataHandler {
 
     @Override
     protected Position handlePosition(Position position) {
-
-        Context.getAsyncHttpClient().prepareGet(formatRequest(position)).execute();
-
+        if (json) {
+            Context.getClient().target(url).request().async().post(Entity.json(prepareJsonPayload(position)));
+        } else {
+            try {
+                Context.getClient().target(formatRequest(position)).request().async().get();
+            } catch (UnsupportedEncodingException | JsonProcessingException e) {
+                Log.warning(e);
+            }
+        }
         return position;
+    }
+
+    protected Map<String, Object> prepareJsonPayload(Position position) {
+
+        Map<String, Object> data = new HashMap<>();
+        Device device = Context.getIdentityManager().getById(position.getDeviceId());
+
+        data.put(KEY_POSITION, position);
+
+        if (device != null) {
+            data.put(KEY_DEVICE, device);
+        }
+
+        return data;
     }
 
 }
